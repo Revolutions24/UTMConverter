@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversión de Coordenadas UTM y Geográficas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+        }
+        label, select, input {
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        input[type="number"], input[type="text"] {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        button {
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .output {
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #ccc;
+            margin-top: 10px;
+            border-radius: 4px;
+        }
+        .gms-group {
+            display: flex;
+            align-items: center;
+        }
+        .gms-group input[type="number"] {
+            width: 60px;
+            margin-right: 5px;
+        }
+        .gms-group span {
+            margin-right: 5px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.5/proj4.js"></script> <!-- Biblioteca para conversión de coordenadas -->
+</head>
+<body>
+    <div class="container">
+        <h1>Conversión de Coordenadas</h1>
+
+        <label for="conversionTipo">Tipo de Conversión:</label>
+        <select id="conversionTipo" onchange="mostrarCampos()">
+            <option value="utmToGeo">UTM a Geográficas</option>
+            <option value="geoToUtm">Geográficas a UTM</option>
+        </select>
+
+        <div id="utmInput">
+            <label for="zona">Zona UTM:</label>
+            <select id="zona">
+                <option value="17S">17S</option>
+                <option value="18S">18S</option>
+                <option value="19S">19S</option>
+            </select>
+
+            <label for="x">Coordenada X (Este):</label>
+            <input type="number" id="x" placeholder="Ingrese la coordenada X">
+
+            <label for="y">Coordenada Y (Norte):</label>
+            <input type="number" id="y" placeholder="Ingrese la coordenada Y">
+        </div>
+
+        <div id="geoInput" style="display: none;">
+            <label for="lat">Latitud (WGS-84):</label>
+            <input type="text" id="lat" placeholder="Ejemplo: -12.04510">
+
+            <label for="lon">Longitud (WGS-84):</label>
+            <input type="text" id="lon" placeholder="Ejemplo: -77.03134">
+        </div>
+
+        <button onclick="convertirCoordenadas()">Convertir</button>
+
+        <div class="output" id="resultado"></div>
+
+        <button id="downloadButton" style="display:none;" onclick="descargarKML()">Descargar KML</button>
+
+        <h2>Conversión de Coordenadas GMS a Decimal</h2>
+        <div>
+            <label>Latitud (Grados, Minutos, Segundos):</label>
+            <div class="gms-group">
+                <input type="radio" name="latDir" value="N" checked> N
+                <input type="radio" name="latDir" value="S"> S
+                <input type="number" id="latGrados" placeholder="Grados">
+                <span>°</span>
+                <input type="number" id="latMinutos" placeholder="Minutos">
+                <span>'</span>
+                <input type="number" id="latSegundos" placeholder="Segundos">
+                <span>"</span>
+            </div>
+
+            <label>Longitud (Grados, Minutos, Segundos):</label>
+            <div class="gms-group">
+                <input type="radio" name="lonDir" value="E" checked> E
+                <input type="radio" name="lonDir" value="O"> O
+                <input type="number" id="lonGrados" placeholder="Grados">
+                <span>°</span>
+                <input type="number" id="lonMinutos" placeholder="Minutos">
+                <span>'</span>
+                <input type="number" id="lonSegundos" placeholder="Segundos">
+                <span>"</span>
+            </div>
+
+            <button onclick="convertirGmsADecimal()">Convertir GMS a Decimal</button>
+            <div class="output" id="resultadoGms"></div>
+        </div>
+    </div>
+
+    <script>
+        let resultadoCoords;
+
+        function mostrarCampos() {
+            const tipoConversion = document.getElementById('conversionTipo').value;
+            if (tipoConversion === 'utmToGeo') {
+                document.getElementById('utmInput').style.display = 'block';
+                document.getElementById('geoInput').style.display = 'none';
+            } else {
+                document.getElementById('utmInput').style.display = 'none';
+                document.getElementById('geoInput').style.display = 'block';
+            }
+        }
+
+        function convertirCoordenadas() {
+            const tipoConversion = document.getElementById('conversionTipo').value;
+
+            if (tipoConversion === 'utmToGeo') {
+                convertirUtmAGeo();
+            } else {
+                convertirGeoAUtm();
+            }
+        }
+
+        function convertirUtmAGeo() {
+            const zona = document.getElementById('zona').value;
+            const x = parseFloat(document.getElementById('x').value);
+            const y = parseFloat(document.getElementById('y').value);
+
+            if (isNaN(x) || isNaN(y)) {
+                document.getElementById('resultado').innerHTML = 'Por favor, ingrese coordenadas válidas.';
+                return;
+            }
+
+            let utmProjection;
+            switch (zona) {
+                case '17S':
+                    utmProjection = "+proj=utm +zone=17 +south +datum=WGS84";
+                    break;
+                case '18S':
+                    utmProjection = "+proj=utm +zone=18 +south +datum=WGS84";
+                    break;
+                case '19S':
+                    utmProjection = "+proj=utm +zone=19 +south +datum=WGS84";
+                    break;
+                default:
+                    utmProjection = "+proj=utm +zone=18 +south +datum=WGS84";
+            }
+
+            const [lon, lat] = proj4(utmProjection, "+proj=longlat +datum=WGS84", [x, y]);
+            document.getElementById('resultado').innerHTML = `Latitud: ${lat.toFixed(6)}, Longitud: ${lon.toFixed(6)}`;
+
+            resultadoCoords = { lat: lat.toFixed(6), lon: lon.toFixed(6) };
+            document.getElementById('downloadButton').style.display = 'block';
+        }
+
+        function convertirGeoAUtm() {
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lon = parseFloat(document.getElementById('lon').value);
+
+            if (isNaN(lat) || isNaN(lon)) {
+                document.getElementById('resultado').innerHTML = 'Por favor, ingrese coordenadas válidas.';
+                return;
+            }
+
+            const zona = determinarZonaUtm(lon);
+            const utmProjection = `+proj=utm +zone=${zona} +south +datum=WGS84`;
+
+            const [x, y] = proj4("+proj=longlat +datum=WGS84", utmProjection, [lon, lat]);
+            document.getElementById('resultado').innerHTML = `Zona: ${zona}S, Coordenada X: ${x.toFixed(2)}, Coordenada Y: ${y.toFixed(2)}`;
+
+            resultadoCoords = { lat, lon };
+            document.getElementById('downloadButton').style.display = 'block';
+        }
+
+        function determinarZonaUtm(lon) {
+            return Math.floor((lon + 180) / 6) + 1;
+        }
+
+        function convertirGmsADecimal() {
+            const latGrados = parseFloat(document.getElementById('latGrados').value);
+            const latMinutos = parseFloat(document.getElementById('latMinutos').value);
+            const latSegundos = parseFloat(document.getElementById('latSegundos').value);
+            const latDir = document.querySelector('input[name="latDir"]:checked').value;
+
+            const lonGrados = parseFloat(document.getElementById('lonGrados').value);
+            const lonMinutos = parseFloat(document.getElementById('lonMinutos').value);
+            const lonSegundos = parseFloat(document.getElementById('lonSegundos').value);
+            const lonDir = document.querySelector('input[name="lonDir"]:checked').value;
+
+            const latDecimal = (latGrados + latMinutos / 60 + latSegundos / 3600) * (latDir === 'S' ? -1 : 1);
+            const lonDecimal = (lonGrados + lonMinutos / 60 + lonSegundos / 3600) * (lonDir === 'O' ? -1 : 1);
+
+            document.getElementById('resultadoGms').innerHTML = `Latitud Decimal: ${latDecimal.toFixed(6)}, Longitud Decimal: ${lonDecimal.toFixed(6)}`;
+        }
+
+        function descargarKML() {
+            if (!resultadoCoords) {
+                alert("No hay coordenadas convertidas para exportar.");
+                return;
+            }
+
+            const { lat, lon } = resultadoCoords;
+
+            const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+                <kml xmlns="http://www.opengis.net/kml/2.2">
+                    <Placemark>
+                        <name>Coordenadas Convertidas</name>
+                        <Point>
+                            <coordinates>${lon},${lat},0</coordinates>
+                        </Point>
+                    </Placemark>
+                </kml>`;
+
+            const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'coordenadas_convertidas.kml';
+            link.click();
+        }
+    </script>
+</body>
+</html>
